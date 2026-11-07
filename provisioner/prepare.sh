@@ -52,8 +52,9 @@
 #     environment; plugins are opt-in, only 'enabled' plugins load
 #     (hermes_cli/plugins_cmd.py cmd_enable, pm/plugin_declarations.py —
 #     python_dependencies accepts version specifiers like "pywebpush>=2,<3")
-#   - Hermes' PM-managed Python: ~/.hermes/tools/python-*/bin/python (pm/packages.py
-#     Python.binary_rel) — the interpreter serve/gateway run with
+#   - Hermes' runtime venv: installs/*/facts.json packages.venv.environment — what
+#     serve/gateway import from. PM maps an enabled plugin key to plugins/<key>,
+#     so the folder name must equal the key (pm/workspace.py enabled_plugin_entries)
 #   - plugin dashboard routes mount at /api/plugins/<name>/... with the dashboard
 #     session auth inherited; unauthenticated GETs get 401
 #   - skills.external_dirs: per-profile config list of extra skill dirs; default
@@ -112,7 +113,11 @@ TAILSCALE_SITE_BEGIN_RE="^# BEGIN droidbot-preparer:tailscale-site"
 TAILSCALE_SITE_END_RE="^# END droidbot-preparer:tailscale-site"
 # Push plugin (backlog: Preparer: push module).
 PLUGIN_NAME="droidbot-push"        # manifest name: `hermes plugins enable` id
-PLUGIN_FOLDER="droidbot_push"      # folder name inside ~/.hermes/plugins/
+# Folder name inside ~/.hermes/plugins/. It MUST equal the plugin key: Hermes'
+# dependency manager finds an enabled plugin's folder by its key, and a mismatch
+# means pywebpush is never installed (the plugin loads, every push fails).
+PLUGIN_FOLDER="droidbot-push"
+PLUGIN_LEGACY_FOLDER="droidbot_push"  # installed by earlier preparer versions
 PLUGIN_DEP="pywebpush>=2,<3"       # pinned in plugin.yaml python_dependencies
 PUSH_ROUTE="/api/plugins/${PLUGIN_NAME}/vapid-public-key"
 # Alado companion skill (phase 7c): teach every bot it lives in Alado (phone PWA),
@@ -1784,15 +1789,18 @@ check_pwa() {
 }
 
 # --- Push module -------------------------------------------------------------------
-# Resolves Hermes' PM-managed Python (~/.hermes/tools/python-*/bin/python[3]), the
-# interpreter hermes serve/gateway run with — pywebpush must be importable from it.
+# Resolves the Python of Hermes' active runtime environment — the venv hermes
+# serve/gateway import from (installs/*/facts.json → packages.venv.environment).
+# Not the base ~/.hermes/tools/python-*: the runtime venv does not see its
+# site-packages, so a package there looks installed and still fails to import.
 find_hermes_python() {
   HERMES_PYTHON=""
-  local p
+  local facts env
   shopt -s nullglob
-  for p in "$HERMES_HOME"/tools/python-*/bin/python "$HERMES_HOME"/tools/python-*/bin/python3; do
-    if [[ -x $p ]]; then
-      HERMES_PYTHON=$p
+  for facts in "$HERMES_HOME"/installs/*/facts.json; do
+    env=$(grep -o '"environment": *"[^"]*"' "$facts" | head -1 | sed 's/.*"\([^"]*\)"$/\1/')
+    if [[ -n $env && -x $env/bin/python ]]; then
+      HERMES_PYTHON=$env/bin/python
       break
     fi
   done
@@ -1906,40 +1914,35 @@ EOF
     cmd mv "$target.droidbot-stage" "$target"
     info "push: plugin copied to ${target}"
   fi
-
-  # 2. Python dependency into Hermes' Python (temporary until the plugin is
-  # published on GitHub; then: hermes plugins install <git-url> --yes-deps).
-  if ! find_hermes_python; then
-    set_status push fail "no Hermes-managed Python found (${HERMES_HOME}/tools/python-*/bin/python)"
-    manual "runuser -u ${HERMES_USER} -- hermes pm install python"
-    return
+  # Earlier versions installed it as plugins/droidbot_push: same plugin, but
+  # Hermes never installed its dependency from there. Two copies would also
+  # register twice.
+  if [[ -d $HERMES_HOME/plugins/$PLUGIN_LEGACY_FOLDER ]]; then
+    cmd rm -rf "$HERMES_HOME/plugins/$PLUGIN_LEGACY_FOLDER"
+    info "push: removed the old plugins/${PLUGIN_LEGACY_FOLDER} copy"
   fi
-  if hermes_pywebpush_ok; then
-    info "push: ${PLUGIN_DEP} already available in Hermes' Python (${HERMES_PYTHON})"
+
+  # 2. Enable through Hermes' plugin admission, which installs the declared
+  # python_dependencies (pywebpush) into Hermes' runtime environment. Already
+  # enabled but the dependency missing (old install): disable + enable re-admits.
+  if plugin_enabled && find_hermes_python && hermes_pywebpush_ok; then
+    info "push: plugin already enabled and ${PLUGIN_DEP} available (${HERMES_PYTHON})"
   elif (( DRY )); then
-    run_hermes "$HERMES_PYTHON" -m pip install --quiet "$PLUGIN_DEP"
-  elif run_hermes "$HERMES_PYTHON" -m pip install --quiet "$PLUGIN_DEP" >/dev/null 2>&1; then
-    info "push: ${PLUGIN_DEP} installed into Hermes' Python (${HERMES_PYTHON})"
+    run_hermes hermes plugins enable "$PLUGIN_NAME" --no-allow-tool-override
   else
-    set_status push fail "${PLUGIN_DEP} could not be installed into Hermes' Python"
-    manual "runuser -u ${HERMES_USER} -- ${HERMES_PYTHON} -m pip install '${PLUGIN_DEP}'"
-    return
+    if plugin_enabled; then
+      run_hermes hermes plugins disable "$PLUGIN_NAME" >/dev/null 2>&1 || true
+    fi
+    if run_hermes hermes plugins enable "$PLUGIN_NAME" --no-allow-tool-override </dev/null >/dev/null 2>&1; then
+      info "push: plugin enabled; Hermes installed ${PLUGIN_DEP} into its environment"
+    else
+      warn "push: 'hermes plugins enable ${PLUGIN_NAME}' failed"
+      manual "runuser -u ${HERMES_USER} -- hermes plugins enable ${PLUGIN_NAME}"
+      manual "runuser -u ${HERMES_USER} -- hermes plugins list   # discovery/dependency admission"
+    fi
   fi
 
-  # 3. Enable as the hermes user (idempotent: reports 'already enabled').
-  if plugin_enabled; then
-    info "push: plugin already enabled"
-  elif (( DRY )); then
-    run_hermes hermes plugins enable "$PLUGIN_NAME"
-  elif run_hermes hermes plugins enable "$PLUGIN_NAME" >/dev/null 2>&1; then
-    info "push: plugin enabled (hermes plugins enable ${PLUGIN_NAME})"
-  else
-    warn "push: 'hermes plugins enable ${PLUGIN_NAME}' failed"
-    manual "runuser -u ${HERMES_USER} -- hermes plugins enable ${PLUGIN_NAME}"
-    manual "runuser -u ${HERMES_USER} -- hermes plugins list   # discovery/dependency admission"
-  fi
-
-  # 4. Restart hint (the plugin and its routes load at process start; never restarts).
+  # 3. Restart hint (the plugin and its routes load at process start; never restarts).
   info "restart Hermes to load the plugin and mount ${PUSH_ROUTE}:"
   hermes_restart_hint
 
@@ -2003,8 +2006,8 @@ EOF
     return
   fi
   if ! $pyok; then
-    set_status push fail "${PLUGIN_DEP} missing from Hermes' Python"
-    manual "runuser -u ${HERMES_USER} -- ${HERMES_PYTHON:-<hermes-python>} -m pip install '${PLUGIN_DEP}'"
+    set_status push fail "${PLUGIN_DEP} missing from Hermes' runtime environment"
+    manual "sudo bash prepare.sh push   # re-admits the plugin so Hermes installs ${PLUGIN_DEP}"
     return
   fi
   if ! $mounted; then

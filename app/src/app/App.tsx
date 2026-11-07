@@ -3,6 +3,7 @@ import { BrowserRouter } from 'react-router-dom'
 import { useStore } from '@nanostores/react'
 import { LoginPage } from '../features/auth/LoginPage'
 import { authState, authStatus, checkAuth } from '../features/auth/store'
+import { resyncPushOnStart } from '../features/push/store'
 import { mintWsTicket } from '../lib/hermes/auth'
 import { close, connect } from '../lib/hermes/connection'
 import { verifyContractCommit } from '../lib/hermes/contract-version'
@@ -48,6 +49,12 @@ export function App() {
     void verifyContractCommit()
     void connect(state, null)
     return () => close()
+  }, [status])
+
+  // Once logged in, re-send this phone's push subscription (the server may
+  // have lost it while the switch still shows "on").
+  useEffect(() => {
+    if (status === 'authed') void resyncPushOnStart()
   }, [status])
 
   // Dev-only design-system gallery: reviewable without logging in.

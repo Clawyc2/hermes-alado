@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useStore } from '@nanostores/react'
 import { locale, useT } from '../../i18n'
 import { Avatar } from '../../ui/Avatar'
@@ -13,11 +13,17 @@ export function MessageList({
   running,
   botName,
   isDefault,
+  footer,
+  footerKey = '',
 }: {
   items: ChatItem[]
   running: boolean
   botName: string
   isDefault: boolean
+  /** Cards that wait on the user (questions, approvals): shown last, where the bot's reply goes. */
+  footer?: ReactNode
+  /** Changes when the footer's content changes, to bring it into view. */
+  footerKey?: string
 }) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const stickRef = useRef(true)
@@ -38,6 +44,15 @@ export function MessageList({
     const el = scrollRef.current
     if (el && stickRef.current && running) el.scrollTop = el.scrollHeight
   }, [items, running])
+
+  // A new question or approval is something the user must see: always scroll to it.
+  useEffect(() => {
+    const el = scrollRef.current
+    if (!el || !footerKey) return
+    el.scrollTop = el.scrollHeight
+    stickRef.current = true
+    setShowJump(false)
+  }, [footerKey])
 
   function onScroll() {
     const el = scrollRef.current
@@ -83,7 +98,7 @@ export function MessageList({
         ) : (
           rows.map(r => (r.kind === 'activity' ? <ActivityRow key={r.id} steps={r.steps} /> : <ItemRow key={r.item.id} g={r.item} />))
         )}
-        {running && <TypingIndicator />}
+        {footer ?? (running && <TypingIndicator />)}
       </div>
       {showJump && (
         <div className="jump-wrap">

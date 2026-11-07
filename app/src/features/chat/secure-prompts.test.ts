@@ -9,12 +9,17 @@ import {
   type IncomingSecureRequest,
 } from './secure-prompts'
 
+// One request id per test (answered ids are remembered module-wide); calls
+// within a test share it, like a replay of the same request.
+let seq = 0
+let currentId = 'req-1'
 function req(method: string, params: Record<string, unknown>, respond: (r: Record<string, unknown>) => void = () => {}): IncomingSecureRequest {
-  return { id: 'req-1', method, params, respond }
+  return { id: currentId, method, params, respond }
 }
 
 beforeEach(() => {
   securePrompts.set([])
+  currentId = `req-${++seq}`
 })
 
 describe('parseSecureRequest', () => {
@@ -25,7 +30,7 @@ describe('parseSecureRequest', () => {
     )
     expect(p).toMatchObject({
       kind: 'vault.save_login',
-      id: 'req-1',
+      id: currentId,
       sessionId: 's1',
       origin: 'https://github.com',
       site: 'github.com',
@@ -54,7 +59,7 @@ describe('parseSecureRequest', () => {
 
   it('maps secret (env_var + prompt) with the 300s deadline', () => {
     const p = parseSecureRequest(req('secret', { env_var: 'X_KEY', prompt: 'dame la key' }), 0)
-    expect(p).toMatchObject({ kind: 'secret', envVar: 'X_KEY', prompt: 'dame la key', timeoutMs: 300_000 })
+    expect(p).toMatchObject({ kind: 'secret', envVar: 'X_KEY', prompt: 'dame la key', timeoutMs: 120_000 })
   })
 
   it('maps sudo with the 120s deadline', () => {
@@ -113,6 +118,15 @@ describe('store', () => {
 
   it('returns false for unhandled methods', () => {
     expect(receiveSecureRequest(req('clarify', {}))).toBe(false)
+    expect(securePrompts.get()).toHaveLength(0)
+  })
+})
+
+describe('replay after answering', () => {
+  it('ignores a replay of a request already answered here', () => {
+    receiveSecureRequest(req('secret', { session_id: 's1', env_var: 'X' }))
+    answerSecurePrompt(securePrompts.get()[0], 'v')
+    receiveSecureRequest(req('secret', { session_id: 's1', env_var: 'X' }))
     expect(securePrompts.get()).toHaveLength(0)
   })
 })

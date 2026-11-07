@@ -160,6 +160,11 @@
   border-radius: var(--r-lg) var(--r-lg) 0 0;
   padding: var(--space-2) var(--space-4) calc(var(--space-4) + var(--safe-bottom));
   animation: sheet-in var(--motion-slow) var(--ease);
+  /* With the keyboard up the visible area shrinks: the sheet scrolls inside it
+     instead of pushing its top off-screen. */
+  max-height: calc(var(--app-height, 100dvh) - var(--space-6));
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .sheet-handle {
@@ -771,4 +776,22 @@ button.row:active {
   background: var(--accent);
   border-color: var(--accent);
   color: var(--on-accent);
+}
+
+/* ── toast ────────────────────────────────────────────────────────────── */
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(96px + var(--safe-bottom)); /* above the composer */
+  transform: translateX(-50%);
+  z-index: 60;
+  max-width: min(92vw, 420px);
+  padding: var(--space-2) var(--space-4);
+  border-radius: var(--r-full);
+  background: var(--text-1);
+  color: var(--surface-1);
+  font-size: 0.9rem;
+  text-align: center;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
+  animation: sheet-in var(--motion-slow) var(--ease);
 }

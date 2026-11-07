@@ -70,14 +70,6 @@ export function ChatPage() {
         )}
       </header>
 
-      {sessionCards.length > 0 && (
-        <div className="request-cards">
-          {sessionCards.map(c => (
-            <RequestCard key={c.id} card={c} bot={bot?.displayName || meta.displayName || profile} />
-          ))}
-        </div>
-      )}
-
       {error && list.length === 0 && (
         <div className="empty">
           <p className="error-text">{error}</p>
@@ -92,6 +84,16 @@ export function ChatPage() {
         running={isRunning}
         botName={bot?.displayName || meta.displayName || profile}
         isDefault={Boolean(bot?.isDefault)}
+        footerKey={sessionCards.map(c => c.id).join(',')}
+        footer={
+          sessionCards.length > 0 ? (
+            <div className="request-cards">
+              {sessionCards.map(c => (
+                <RequestCard key={c.id} card={c} bot={bot?.displayName || meta.displayName || profile} />
+              ))}
+            </div>
+          ) : undefined
+        }
       />
 
       <Composer />

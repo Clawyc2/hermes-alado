@@ -1,6 +1,6 @@
 ---
 name: alado-companion
-description: "You are talked to from Alado, a phone app — not Hermes Desktop. Read before you use the computer/browser, ask the user to log in, solve a captcha or 2FA, or tell them how to watch or take over your screen."
+description: "You are talked to from Alado, a phone app — not Hermes Desktop, and the user has no terminal. Read before you use the computer/browser, ask the user to log in, solve a captcha or 2FA, tell them how to watch or take over your screen, set up a CLI/API login (OAuth, API keys, tokens), or would ask them to run any command."
 ---
 
 # Alado companion
@@ -51,6 +51,68 @@ the user a secure form on their phone (user + masked password); the vault fills 
 see the password. Use `action=enter_code` when the site asks for a 2FA / one-time code — the user gets
 a code form the same way. Only if that fails (the form is unusual, a captcha appears, the user
 prefers it) fall back to letting them take control of the screen.
+
+## Commands: you run them, never the user
+
+The user has **no terminal** — they are on their phone, not at the server. Never answer with "run
+this on the host / in a terminal / over SSH". Every command is yours to run with the `terminal` tool,
+including setup and logins of command-line tools (`gh auth`, `xurl auth`, `gcloud auth`, …).
+
+**Never ask for a sudo password.** You run as an unprivileged user with no sudo rights, so a sudo
+prompt can only fail. Install tools with Hermes' own manager, no root needed: `hermes pm install
+<name>` (e.g. `gh`; `hermes pm doctor` lists what it offers), or a user-level install (`pip install
+--user`, `npm` prefix in your home). If something truly needs root (an apt package, a system
+service), say so in one line: the server admin has to install it.
+
+**Commands that wait for an answer** (an OAuth flow that prints a URL and waits for the redirect, a
+`[y/N]` prompt, a code to paste):
+
+1. Start it in the background: `terminal` with `background=true` **and `persist_on_release=true`**
+   (and `pty=true` if it needs a real terminal). Prefer the tool's headless / device-code /
+   no-browser mode. `persist_on_release` matters: to authorize, the user leaves Alado for the
+   browser, the app disconnects, and without it Hermes kills your process when the session idles.
+2. Read its output with `process_manage action=poll` (or `log`) until it prints the URL or the question.
+3. Send the user the URL or the question in one short message, saying exactly what to paste back.
+4. When they answer in the chat, pass it with `process_manage action=submit` (`data` = their answer,
+   `session_id` = the process id), then `poll` until it finishes and tell them the result. Lost the
+   process id (new turn, resumed chat)? `process_manage action=list` shows it.
+
+An OAuth redirect URL (`…?code=…`) or a device code is fine in the chat: it works once and expires in
+minutes. If the process ended while you waited, start it again and send the new URL. If the user
+gives up, stop it with `process_manage action=kill`.
+
+`process_manage` may be a deferred tool. Call it through `tool_call` with exactly this shape — the
+name and its arguments in the **same** object:
+
+```
+tool_call {"calls":[{"name":"process_manage","arguments":{"action":"submit","session_id":"proc_…","data":"<their answer>"}}]}
+```
+
+**Secrets** (client secrets, API keys, tokens, passwords) never go through the chat. Ask for them
+with the secure form — but **only when the user already has the values at hand**. Each field waits
+about 2 minutes and you are blocked while it waits; if the user has to leave the app to fetch the
+value (another site, another app), the form expires meanwhile. So first tell them where to find the
+values and ask them to reply "ready" / "listo" once they have them copied; open the form only after
+that reply. Ask only for what is truly secret (a client ID or username can go in the chat).
+
+Then:
+
+1. Create a small skill of your own with `skill_manage action=create` (e.g. `x-api-setup`) whose
+   frontmatter declares the variables:
+
+   ```yaml
+   required_environment_variables:
+     - name: X_CLIENT_SECRET
+       prompt: "Client secret of your X app"
+       help: "https://developer.x.com/en/portal/dashboard"
+   ```
+
+2. Load it with `skill_view`. Alado shows the user a secure masked form for each missing variable;
+   the value is saved to your `.env` and you never see it.
+3. Use it in commands as `"$X_CLIENT_SECRET"`; never echo or print it. Non-secret values (a client
+   ID, a username) can simply be asked in the chat.
+
+If the user skips the form, the variable stays missing: tell them, and offer to ask again.
 
 ## When to hand over
 

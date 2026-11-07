@@ -8,6 +8,7 @@ import { BotProfileEditPage } from '../features/bot-profile/BotProfileEditPage'
 import { BotProfilePage } from '../features/bot-profile/BotProfilePage'
 import { ChatPage } from '../features/chat/ChatPage'
 import { SecurePromptHost } from '../features/chat/SecurePromptSheet'
+import { ToastHost } from '../ui/Toast'
 import { ComputerPage } from '../features/computer/ComputerPage'
 import { CatalogPage } from '../features/connectors/CatalogPage'
 import { ConnectorDetailPage } from '../features/connectors/ConnectorDetailPage'
@@ -129,6 +130,7 @@ export function Shell() {
       </div>
       <InstallInvite />
       <SecurePromptHost />
+      <ToastHost />
     </>
   )
 }

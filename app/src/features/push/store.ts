@@ -21,6 +21,7 @@ import {
   iosNeedsInstall,
   notificationPermission,
   pushSupported,
+  resyncSubscription,
   saveProfilePrefs,
   sendTestPush,
   subscribeToPush,
@@ -66,6 +67,24 @@ export async function refreshPushStatus(): Promise<void> {
     pushSetup.set(subscription ? { state: 'on' } : { state: 'off' })
   } catch {
     pushSetup.set({ state: 'no-plugin' })
+  }
+}
+
+/**
+ * App start: put this device's subscription back on the server (see
+ * `resyncSubscription`). Never prompts — only runs when permission is already
+ * granted and the browser holds a subscription. Best effort.
+ */
+export async function resyncPushOnStart(): Promise<void> {
+  if (!pushSupported() || iosNeedsInstall() || notificationPermission() !== 'granted') return
+  try {
+    const subscription = await getCurrentSubscription()
+    if (!subscription) return
+    const info = await fetchPluginInfo()
+    if (!info.installed) return
+    await resyncSubscription(info.key, subscription)
+  } catch {
+    // offline or plugin down: the next start retries
   }
 }
 

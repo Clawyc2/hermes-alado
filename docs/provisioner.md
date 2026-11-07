@@ -255,17 +255,17 @@ may sit under `/root`, unreadable by hermes):
 1. **Validates the source** from `--plugin-src` (default: the `hermes-plugin/droidbot_push`
    folder next to the script): requires `plugin.yaml` with `name: droidbot-push` and
    `__init__.py`. Missing/invalid → `fail` with the manual steps.
-2. **Copies** it to `~/.hermes/plugins/droidbot_push` (stage → swap, so a failed copy never
+2. **Copies** it to `~/.hermes/plugins/droidbot-push` (stage → swap, so a failed copy never
    leaves a half plugin). Idempotent: every source file is sha256-compared against the installed
    copy; identical → "already up to date" (runtime files like `__pycache__` are ignored).
    Plugin state (VAPID key, subscriptions, prefs) lives in `plugin-data/`, never inside the
    plugin folder, so re-copies lose nothing.
-3. **Installs the Python dependency** `pywebpush>=2,<3` (pinned in `plugin.yaml`
-   `python_dependencies`, which the PM resolver honors) into Hermes' PM-managed Python
-   (`~/.hermes/tools/python-*/bin/python` — the interpreter `hermes serve`/`gateway` run with):
-   `<python> -m pip install "pywebpush>=2,<3"` as the hermes user, only when the import/version
-   check fails. **Temporary path** until the plugin is published on GitHub; then this step
-   becomes `hermes plugins install <git-url> --yes-deps --enable`.
+   The folder name must equal the plugin key: Hermes' dependency manager finds an enabled
+   plugin's folder by its key. An old `plugins/droidbot_push` copy (earlier versions) is removed.
+3. **Gets the Python dependency** `pywebpush>=2,<3` (declared in `plugin.yaml`
+   `python_dependencies`) through Hermes' own plugin admission: enabling the plugin installs it
+   into Hermes' runtime environment (`installs/*/facts.json` → `packages.venv.environment`).
+   Already enabled but the dependency missing → disable + enable to re-admit.
 4. **Enables it** with `hermes plugins enable droidbot-push` as the hermes user (idempotent:
    Hermes reports "already enabled"). The plugin declares no capabilities, so there is no
    interactive consent prompt; if the PM admission refuses (e.g. resolver conflict), the exact
@@ -339,7 +339,7 @@ is not fully wired (including leftover blocks).
 | Caddyfile: marked blocks (`# BEGIN/END droidbot-preparer:*`); re-upsert replaces the existing block (literal `index()` match for v1 markers, anchored regex for access sites); full-site replace sweeps stale sslip hosts after an IP change | caddy, access, cleanup |
 | Legacy cleanup: every removal is guarded by existence checks; re-runs are no-ops | botdesktop |
 | PWA: sha256 marker; identical redeploy = no-op; the default release is verified against the published checksum | pwa |
-| Plugin: per-file sha256 compare against the installed copy; pip install only when the import/version check fails; `hermes plugins enable` is idempotent | push |
+| Plugin: per-file sha256 compare against the installed copy; re-admit (disable + enable) only when pywebpush is missing from the runtime environment | push |
 | Skill: per-file sha256 compare against the installed copy; `skills.external_dirs` merged via read-modify-write (`config get` → append only when absent → `config set`); `platform_hints.tui.replace` written with `config set --force` only when the value differs from the hint file; marked SOUL block stripped only (cleanup) | companion |
 | `hermes config set` only writes when the value differs; `--check` only reads (`config get`) | access |
 | `--check` never writes (guards in `upsert_marked_block`/`replace_whole_site_block`; cleanup reports only) | global |
@@ -496,10 +496,9 @@ vapid-public-key` → 401 (push); skill files present + per-profile `external_di
   `dashboard.public_url` — then a restart of `hermes serve`/`gateway` is printed, never run.
 - `/var/www/droidbot` (PWA), `/var/www/droidbot.prev`, `/var/lib/droidbot/dist.sha256`.
 - Tailscale: `tailscale serve --bg --yes --https=443` (persists in tailscaled; nothing else).
-- `~/.hermes/plugins/droidbot_push` (the plugin, hermes-owned) and
-  `~/.hermes/tools/python-*/lib/.../site-packages` (pywebpush pip-installed into Hermes'
-  PM-managed Python); `hermes plugins enable droidbot-push` writes `plugins.enabled` and syncs
-  the PM environment. The Hermes restart is printed, never run.
+- `~/.hermes/plugins/droidbot-push` (the plugin, hermes-owned); `hermes plugins enable
+  droidbot-push` writes `plugins.enabled` and installs pywebpush into Hermes' runtime
+  environment. The Hermes restart is printed, never run.
 - `~/.hermes/alado-skills/alado-companion/` (the skill, hermes-owned) and, per profile,
   `skills.external_dirs` in `config.yaml` (via `hermes -p <profile> config set`, merged — never
   overwritten) and `platform_hints.tui.replace` (TOP-LEVEL key, via

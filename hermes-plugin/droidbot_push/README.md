@@ -15,7 +15,8 @@ Tapping a notification opens `/chat/<profile>` or `/group/<room>`.
 ```bash
 # 1. Copy the plugin into the user-plugins folder
 mkdir -p ~/.hermes/plugins
-cp -r droidbot_push ~/.hermes/plugins/
+# The folder name must be the plugin key, or Hermes never installs pywebpush
+cp -r droidbot_push ~/.hermes/plugins/droidbot-push
 
 # 2. Enable it. Hermes' admission resolves pywebpush via the PM;
 #    if it asks for dependencies: hermes pm install (interactive consent).

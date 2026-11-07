@@ -1,18 +1,35 @@
 """REST de droidbot-push, montado por Hermes en ``/api/plugins/droidbot-push/``.
 
 La auth del dashboard se hereda automáticamente (middleware de sesión antes
-del router). El web server importa este archivo por path (no como paquete),
-así que arreglamos sys.path y usamos nombres de módulo estables.
+del router). The web server imports this file by path (not as a package), so
+the plugin folder is loaded under the stable module name ``droidbot_push``
+whatever the folder is called on disk. Hermes installs it as
+``plugins/droidbot-push`` (folder name = plugin key, which is how Hermes'
+dependency manager finds it and installs pywebpush).
 """
 from __future__ import annotations
 
+import importlib.util
 import sys
 from pathlib import Path
 from typing import Any, Optional
 
-_plugin_parent = str(Path(__file__).resolve().parents[2])
-if _plugin_parent not in sys.path:
-    sys.path.insert(0, _plugin_parent)
+
+def _load_plugin_package() -> None:
+    if "droidbot_push" in sys.modules:
+        return
+    pkg_dir = Path(__file__).resolve().parents[1]
+    spec = importlib.util.spec_from_file_location(
+        "droidbot_push", pkg_dir / "__init__.py", submodule_search_locations=[str(pkg_dir)]
+    )
+    if spec is None or spec.loader is None:
+        raise ImportError(f"cannot load droidbot_push from {pkg_dir}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules["droidbot_push"] = module
+    spec.loader.exec_module(module)
+
+
+_load_plugin_package()
 
 from fastapi import APIRouter, Header, HTTPException  # noqa: E402
 from pydantic import BaseModel  # noqa: E402

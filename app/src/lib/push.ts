@@ -154,6 +154,33 @@ export async function registerSubscription(subscription: PushSubscription): Prom
   })
 }
 
+/**
+ * Re-sends this device's existing subscription. The server can lose it (plugin
+ * reinstall, data reset) or rotate its VAPID key while the browser still says
+ * "subscribed" — then the switch shows on and nothing ever arrives. A key
+ * mismatch re-subscribes with the server's current key. Idempotent: the plugin
+ * upserts by endpoint.
+ */
+export async function resyncSubscription(key: string, current: PushSubscription): Promise<void> {
+  let subscription = current
+  if (key && !sameKey(subscription.options.applicationServerKey, key)) {
+    await subscription.unsubscribe()
+    const registration = await navigator.serviceWorker.ready
+    subscription = await registration.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: base64UrlToBytes(key),
+    })
+  }
+  await registerSubscription(subscription)
+}
+
+function sameKey(current: ArrayBuffer | null, key: string): boolean {
+  if (!current) return false
+  const a = new Uint8Array(current)
+  const b = base64UrlToBytes(key)
+  return a.length === b.length && a.every((byte, i) => byte === b[i])
+}
+
 export async function unsubscribeFromPush(): Promise<void> {
   const subscription = await getCurrentSubscription()
   if (subscription) {

@@ -16,14 +16,15 @@ export type SecurePromptKind =
   | 'vault.code'
 
 /**
- * Backend deadlines (`tui_gateway/agent_callbacks.py`, pinned bf0203a): sudo 120 s,
- * unlock 120 s, save_login 180 s, code 180 s, secret 300 s (`_ask` default). The
- * sheet shows a countdown and answers "" on expiry; the backend also withdraws the
- * request itself after the deadline, so a late answer is a wire no-op.
+ * Backend deadlines (pinned bf0203a): sudo 120 s, unlock 120 s, save_login 180 s,
+ * code 180 s (`tui_gateway/agent_callbacks.py`); secret 120 s — a bot turn runs on
+ * the gateway, whose `SECRET_TIMEOUT_S = 120` (`gateway/session_secret_prompt.py`)
+ * applies, per field. The sheet shows a countdown and answers "" on expiry; the
+ * backend also withdraws the request itself after the deadline.
  */
 export const SECURE_TIMEOUT_MS: Record<SecurePromptKind, number> = {
   sudo: 120_000,
-  secret: 300_000,
+  secret: 120_000,
   'vault.unlock_prompt': 120_000,
   'vault.save_login': 180_000,
   'vault.code': 180_000,
@@ -140,10 +141,16 @@ export function parseSecureRequest(req: IncomingSecureRequest, now = Date.now())
   }
 }
 
+// Ids already answered here. A reconnect replay (`open_requests`) can still hand
+// one back while the answer is in flight; showing it again would take a second
+// answer the server ignores.
+const answeredIds = new Set<string>()
+
 /** Add (or replace, by id) a secure prompt. Returns `false` for methods this store does not handle. */
 export function receiveSecureRequest(req: IncomingSecureRequest): boolean {
   const prompt = parseSecureRequest(req)
   if (!prompt) return false
+  if (answeredIds.has(prompt.id)) return true
   securePrompts.set([...securePrompts.get().filter(x => x.id !== prompt.id), prompt])
   return true
 }
@@ -154,6 +161,7 @@ export function removeSecurePrompt(id: string): void {
 
 /** Answer the backend and drop the card. `value === ''` = skipped / cancelled. */
 export function answerSecurePrompt(prompt: SecurePrompt, value: string): void {
+  answeredIds.add(prompt.id)
   prompt.respond({ value })
   removeSecurePrompt(prompt.id)
 }

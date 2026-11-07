@@ -136,6 +136,8 @@ export const es = {
       codeAria: '{asker} te pide un código de acceso',
       unlockAria: '{asker} necesita desbloquear {name}',
       secretAria: '{asker} te pide una clave',
+      sent: 'Enviado a {asker}',
+      expired: 'El formulario venció: pedile a {asker} que lo abra de nuevo',
       sudoAria: '{asker} necesita tu contraseña de sudo',
       username: 'Usuario o email',
       password: 'Contraseña',

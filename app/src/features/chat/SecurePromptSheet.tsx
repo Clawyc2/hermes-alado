@@ -6,6 +6,7 @@ import { IconButton } from '../../ui/IconButton'
 import { Sheet } from '../../ui/Sheet'
 import { useBotAppearance } from '../bots/appearance-store'
 import { homeBots } from '../home/store'
+import { showToast } from '../../ui/toast-store'
 import { profileForSession } from './requests'
 import {
   answerSecurePrompt,
@@ -54,9 +55,15 @@ function SecurePromptSheet({ prompt }: { prompt: SecurePrompt }) {
   useEffect(() => {
     if (remaining > 0) return
     answerSecurePrompt(prompt, '')
-  }, [remaining, prompt])
+    showToast(t('chat.secure.expired', { asker }), 6000)
+  }, [remaining, prompt, asker, t])
 
   const cancel = () => answerSecurePrompt(prompt, '')
+  // The answer travels to the bot; confirm it so the user is not left guessing.
+  const send = (value: string) => {
+    answerSecurePrompt(prompt, value)
+    if (value) showToast(t('chat.secure.sent', { asker }))
+  }
 
   return (
     <Sheet open onClose={cancel} title={ariaTitle(prompt, asker)}>
@@ -72,7 +79,7 @@ function SecurePromptSheet({ prompt }: { prompt: SecurePrompt }) {
         prompt={prompt}
         expiring={expiring}
         remainingS={Math.ceil(remaining / 1000)}
-        onAnswer={v => answerSecurePrompt(prompt, v)}
+        onAnswer={send}
         onCancel={cancel}
       />
     </Sheet>
