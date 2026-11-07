@@ -635,6 +635,108 @@ button {
   -webkit-touch-callout: none;
 }
 
+/* The bubble whose popup menu is open stays highlighted (Telegram-style) */
+.msg-bubble.copy-selected,
+.msg-note.copy-selected {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+/* Telegram-style copy popup — one instance, portaled to body by MessageList */
+.copy-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50; /* above the chat, below the toast (60) */
+}
+
+.copy-menu {
+  position: fixed;
+  left: -9999px; /* off-screen until the anchor math lands (same frame) */
+  top: -9999px;
+  z-index: 51;
+  display: flex;
+  flex-direction: column;
+  min-width: 10rem;
+  padding: 6px;
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--r-sm);
+  box-shadow: var(--shadow-md);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transform-origin: 50% 100%;
+  animation: copy-menu-in var(--motion-fast) var(--ease);
+}
+
+.copy-menu-below {
+  transform-origin: 50% 0;
+}
+
+@keyframes copy-menu-in {
+  from {
+    opacity: 0;
+    transform: scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.copy-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border: 0;
+  border-radius: calc(var(--r-sm) - 6px);
+  background: none;
+  color: var(--text-1);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  line-height: 1;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.copy-menu-item svg {
+  color: var(--text-2);
+  flex: none;
+}
+
+.copy-menu-item:active {
+  background: var(--accent-soft);
+}
+
+@media (hover: hover) {
+  .copy-menu-item:hover {
+    background: var(--surface-3);
+  }
+}
+
+/* Little arrow tying the popup to the bubble (hidden in cursor mode) */
+.copy-menu-arrow {
+  position: absolute;
+  bottom: -6px;
+  width: 10px;
+  height: 10px;
+  margin-left: -5px;
+  background: var(--glass);
+  border-right: 1px solid var(--glass-border);
+  border-bottom: 1px solid var(--glass-border);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  transform: rotate(45deg);
+}
+
+.copy-menu-below .copy-menu-arrow {
+  top: -6px;
+  bottom: auto;
+  border: 0;
+  border-left: 1px solid var(--glass-border);
+  border-top: 1px solid var(--glass-border);
+  transform: rotate(45deg);
+}
+
 /* Coarse pointers: long-press always copies the whole message (Telegram-style);
    manual text selection stays available on desktop */
 @media (pointer: coarse) {

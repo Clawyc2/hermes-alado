@@ -8,6 +8,7 @@ import { Markdown } from './markdown'
 import { activitySummary, groupToRows, type ActivityStep } from './activity'
 import { loadOlder, retryLast, type ChatItem } from './store'
 import { useLongPressCopy } from './useLongPressCopy'
+import { CopyMenu } from './CopyMenu'
 
 export function MessageList({
   items,
@@ -107,6 +108,7 @@ export function MessageList({
           {newBelow > 0 && <span className="jump-count">{newBelow}</span>}
         </div>
       )}
+      <CopyMenu />
     </div>
   )
 }
@@ -126,7 +128,7 @@ function ItemRow({ g }: { g: ChatItem }) {
             : ''
   const copyable =
     rawText.trim() !== '' && !(g.kind === 'assistant' && (g.streaming || false))
-  const { handlers, armed, copy } = useLongPressCopy(() => rawText, copyable)
+  const { handlers, pressed, selected, copy } = useLongPressCopy(g.id, () => rawText, copyable)
   const copyBtn = copyable && (g.kind === 'user' || g.kind === 'assistant') && (
     <IconButton
       icon="copy"
@@ -135,7 +137,9 @@ function ItemRow({ g }: { g: ChatItem }) {
       onClick={() => void copy()}
     />
   )
-  const armedCls = armed ? ' copy-armed' : ''
+  // pressed: finger down (gesture pending). selected: its popup is the open
+  // one — the bubble stays lit until the menu closes.
+  const armedCls = `${pressed || selected ? ' copy-armed' : ''}${selected ? ' copy-selected' : ''}`
   switch (g.kind) {
     case 'user':
       return (
