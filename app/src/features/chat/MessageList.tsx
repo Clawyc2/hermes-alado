@@ -7,6 +7,7 @@ import { useBotAppearance } from '../bots/appearance-store'
 import { Markdown } from './markdown'
 import { activitySummary, groupToRows, type ActivityStep } from './activity'
 import { loadOlder, retryLast, type ChatItem } from './store'
+import { useLongPressCopy } from './useLongPressCopy'
 
 export function MessageList({
   items,
@@ -112,16 +113,42 @@ export function MessageList({
 
 function ItemRow({ g }: { g: ChatItem }) {
   const t = useT()
+  // Long-press (mobile) / hover button (desktop) copies the RAW message text.
+  const rawText =
+    g.kind === 'user'
+      ? g.text
+      : g.kind === 'assistant'
+        ? g.text
+        : g.kind === 'agent'
+          ? g.body
+          : g.kind === 'delivery'
+            ? g.reply
+            : ''
+  const copyable =
+    rawText.trim() !== '' && !(g.kind === 'assistant' && (g.streaming || false))
+  const { handlers, armed, copy } = useLongPressCopy(() => rawText, copyable)
+  const copyBtn = copyable && (g.kind === 'user' || g.kind === 'assistant') && (
+    <IconButton
+      icon="copy"
+      className="msg-copy"
+      label={t('chat.copyMessage')}
+      onClick={() => void copy()}
+    />
+  )
+  const armedCls = armed ? ' copy-armed' : ''
   switch (g.kind) {
     case 'user':
       return (
         <div className="msg user">
-          <div className="msg-bubble">{g.text}</div>
+          {copyBtn}
+          <div className={`msg-bubble${armedCls}`} {...handlers}>
+            {g.text}
+          </div>
         </div>
       )
     case 'agent':
       return (
-        <div className="msg-note">
+        <div className={`msg-note${armedCls}`} {...handlers}>
           <NoteAvatar name={g.sender} />
           <span>
             {t('chat.messageFrom', { sender: g.sender })}
@@ -136,7 +163,7 @@ function ItemRow({ g }: { g: ChatItem }) {
       )
     case 'delivery':
       return (
-        <div className="msg-note">
+        <div className={`msg-note${armedCls}`} {...handlers}>
           <NoteAvatar name={g.target} />
           <span>
             {t('chat.wroteTo', { target: g.target })}
@@ -153,7 +180,7 @@ function ItemRow({ g }: { g: ChatItem }) {
     case 'assistant':
       return (
         <div className="msg assistant">
-          <div className="msg-bubble assistant">
+          <div className={`msg-bubble assistant${armedCls}`} {...handlers}>
             {g.text.trim() ? (
               <Markdown text={g.text.trim()} />
             ) : g.streaming ? (
@@ -170,6 +197,7 @@ function ItemRow({ g }: { g: ChatItem }) {
               </div>
             )}
           </div>
+          {copyBtn}
         </div>
       )
     case 'error':

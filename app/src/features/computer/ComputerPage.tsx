@@ -6,6 +6,7 @@ import { useT } from '../../i18n'
 import { displayStart, displayThumbnail, parseGeometry } from '../../lib/hermes/display'
 import { PREPARER_COMMAND } from '../../lib/hermes/preparer'
 import { EmptyState } from '../../ui/EmptyState'
+import { copyText } from '../../ui/clipboard'
 import { Icon } from '../../ui/Icon'
 import { PageShell } from '../../ui/PageShell'
 import { Section } from '../../ui/Section'
@@ -14,15 +15,6 @@ import { applyDisplayStatus, computerDetail, computerError, computerLoading, loa
 import './computer.css'
 
 const THUMB_INTERVAL_MS = 4000
-
-async function copyText(text: string): Promise<boolean> {
-  try {
-    await navigator.clipboard.writeText(text)
-    return true
-  } catch {
-    return false
-  }
-}
 
 function CopyButton({ text }: { text: string }) {
   const [done, setDone] = useState(false)

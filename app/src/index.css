@@ -596,6 +596,54 @@ button {
 
 .msg {
   display: flex;
+  position: relative;
+}
+
+/* Copy-message hover button (desktop only; mobile uses long-press) */
+.msg-copy {
+  position: absolute;
+  top: -6px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s;
+}
+
+.msg.user .msg-copy {
+  right: 0;
+  transform: translateX(100%);
+  margin-right: 6px;
+}
+
+.msg.assistant .msg-copy {
+  top: -16px;
+  right: 4px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .msg:hover .msg-copy,
+  .msg-copy:focus-visible {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+/* While a long-press is pending, text selection/callout would fight the gesture */
+.msg-bubble.copy-armed,
+.msg-note.copy-armed {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+/* Coarse pointers: long-press always copies the whole message (Telegram-style);
+   manual text selection stays available on desktop */
+@media (pointer: coarse) {
+  .msg-bubble,
+  .msg-note-body {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
 }
 
 .msg.user {

@@ -16,6 +16,7 @@ import {
 } from '../home/store'
 import { botDisplayName } from '../bot-profile/store'
 import { Avatar } from '../../ui/Avatar'
+import { copyText } from '../../ui/clipboard'
 import { Disclosure } from '../../ui/Disclosure'
 import { PageShell } from '../../ui/PageShell'
 import { Row, Section } from '../../ui/Section'
@@ -51,27 +52,6 @@ const CLOUD_BROWSERS: { titleKey: 'health.cloudBrowserBase' | 'health.cloudBrows
 
 function checkTone(status: CheckStatus): DotTone {
   return status === 'ok' ? 'ok' : status === 'warn' ? 'warn' : 'danger'
-}
-
-async function copyText(text: string): Promise<boolean> {
-  try {
-    await navigator.clipboard.writeText(text)
-    return true
-  } catch {
-    try {
-      const ta = document.createElement('textarea')
-      ta.value = text
-      ta.style.position = 'fixed'
-      ta.style.opacity = '0'
-      document.body.appendChild(ta)
-      ta.select()
-      document.execCommand('copy')
-      document.body.removeChild(ta)
-      return true
-    } catch {
-      return false
-    }
-  }
 }
 
 function CopyButton({ text }: { text: string }) {
