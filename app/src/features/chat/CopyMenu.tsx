@@ -1,27 +1,30 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { useStore } from '@nanostores/react'
-import { closeMsgMenu, msgMenu } from './msg-menu-store'
-import { copyText } from '../../ui/clipboard'
-import { showToast } from '../../ui/toast-store'
+import {
+  backdropPointerAction,
+  closeMsgMenu,
+  copyFromMsgMenu,
+  isOpeningClick,
+  msgMenu,
+} from './msg-menu-store'
 import { Icon } from '../../ui/Icon'
 import { useT } from '../../i18n'
 
 const GAP = 8 // menu ↔ bubble / cursor
 const EDGE = 8 // viewport margin
 const ARROW_W = 10
-/** The release of the opening gesture can leave a trailing click; a real tap
- *  on "Copy" can't land this fast after the menu appears. */
-const CLICK_GRACE_MS = 300
 
 type Pos = { left: number; top: number; below: boolean; arrowX: number }
 
 /**
  * The single Telegram-style copy popup for the chat, mounted once by
  * MessageList. Long-press anchors it above the pressed bubble (with a little
- * arrow); desktop right-click anchors it at the cursor (no arrow, like a
- * native context menu). Tapping the backdrop, scrolling or Esc closes it;
- * tapping "Copy" is the only clipboard write — a real click, so iOS is happy.
+ * arrow) — and the menu opens while the finger is still down, so the backdrop
+ * swallows that same pointer's release (pointerId) instead of treating it as
+ * a tap-outside. Desktop right-click anchors it at the cursor. Tapping the
+ * backdrop, scrolling or Esc closes it; tapping "Copy" is the only clipboard
+ * write — a real click, so iOS is happy.
  */
 export function CopyMenu() {
   const menu = useStore(msgMenu)
@@ -68,23 +71,25 @@ export function CopyMenu() {
     }
   }, [menu])
 
-  if (!menu) return null
+  // Outside pointers close the menu — except the very gesture that opened it
+  // (its release must not count as a tap-outside).
+  const onBackdropPointerDown = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (backdropPointerAction(menu, e.pointerId) === 'close') closeMsgMenu()
+  }
 
-  const { text, openedAt } = menu
-  const onCopy = async () => {
-    if (performance.now() - openedAt < CLICK_GRACE_MS) return
-    closeMsgMenu()
-    const ok = await copyText(text)
-    showToast(ok ? t('chat.copied') : t('chat.copyFailed'))
+  if (!menu) {
+    // The backdrop node itself stays mounted (inert via CSS) so it is never
+    // removed from the DOM mid-gesture — the WebKit-safe pattern.
+    return createPortal(<div className="copy-menu-backdrop" aria-hidden="true" />, document.body)
   }
 
   return createPortal(
     <>
-      {/* pointerdown (not click): the opening gesture's pointerdown already
-          happened on the bubble, so its trailing events can't land here. */}
       <div
         className="copy-menu-backdrop"
-        onPointerDown={() => closeMsgMenu()}
+        data-open=""
+        aria-hidden="true"
+        onPointerDown={onBackdropPointerDown}
         onContextMenu={e => {
           e.preventDefault()
           closeMsgMenu()
@@ -101,7 +106,18 @@ export function CopyMenu() {
           closeMsgMenu()
         }}
       >
-        <button type="button" className="copy-menu-item" role="menuitem" onClick={() => void onCopy()}>
+        <button
+          type="button"
+          className="copy-menu-item"
+          role="menuitem"
+          onClick={e => {
+            // Swallow the opening gesture's trailing click (same pointerId)
+            // and the first instants after open (iOS ghost tap).
+            const ev = e as unknown as PointerEvent
+            if (isOpeningClick(menu, ev.pointerId, performance.now())) return
+            void copyFromMsgMenu(menu)
+          }}
+        >
           <Icon name="copy" />
           <span>{t('chat.copyMessage')}</span>
         </button>

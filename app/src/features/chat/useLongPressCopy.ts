@@ -1,128 +1,142 @@
-import { useCallback, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent } from 'react'
 import { useStore } from '@nanostores/react'
 import { msgMenu, openMsgMenu } from './msg-menu-store'
+import { contextMenuAction, createLongPress, type LongPressMachine } from './long-press'
 import { copyText } from '../../ui/clipboard'
 import { showToast } from '../../ui/toast-store'
 import { useT } from '../../i18n'
 
 /**
- * Long-press opens the copy popup, Telegram-style. The clipboard write itself
- * happens on the popup's "Copy" button click — never here.
+ * Long-press opens the copy popup, Telegram-style — while the finger is still
+ * down (~450ms into the hold). The clipboard write itself happens on the
+ * popup's "Copy" button click — never here — so iOS keeps its transient
+ * activation: that is a fresh user gesture, unlike a setTimeout.
  *
- * Mobile (touch/pen): press ≥450ms without moving >10px, scrolling or landing
- * a second finger → haptic tick + the bubble lights up; on release a popup
- * anchored above the bubble opens. A short tap stays a normal tap (nothing
- * happens). Doing the write from the menu button keeps WebKit's transient
- * activation intact: it is a fresh user gesture, unlike a setTimeout.
- *
- * Desktop (mouse): pointer handlers are no-ops; right-click (contextmenu)
- * opens the same popup at the cursor, and the hover copy button still copies
- * directly via the returned `copy()`.
+ * The browser rules live in long-press.ts (pure, gesture-tested). This hook is
+ * only the React wiring: pointer events → machine, machine.onOpen → the
+ * msg-menu store, and the contextmenu split (touch suppresses the native
+ * callout; mouse right-click opens at the cursor).
  */
 const LONG_PRESS_MS = 450
 const MOVE_SLOP_PX = 10
+const SCROLL_GRACE_MS = 150
 
 export function useLongPressCopy(id: string, getText: () => string, enabled: boolean) {
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
-  const startXRef = useRef(0)
-  const startYRef = useRef(0)
-  const firedRef = useRef(false)
-  const touchRef = useRef(false)
   const [pressed, setPressed] = useState(false)
   const t = useT()
   const menu = useStore(msgMenu)
 
-  const clear = useCallback(() => {
-    if (timerRef.current) clearTimeout(timerRef.current)
-    timerRef.current = null
-    firedRef.current = false
-    setPressed(false)
+  // Fresh-at-gesture-time values for the machine's stable callbacks (synced
+  // in an effect, never during render).
+  const enabledRef = useRef(enabled)
+  const getTextRef = useRef(getText)
+  const elRef = useRef<HTMLDivElement | null>(null)
+  const openRef = useRef<(pointerId: number) => void>(() => {})
+  const lastPointerTypeRef = useRef<string | null>(null)
+
+  useEffect(() => {
+    enabledRef.current = enabled
+    getTextRef.current = getText
+    openRef.current = pointerId => {
+      if (!enabledRef.current || !elRef.current) return
+      const r = elRef.current.getBoundingClientRect()
+      openMsgMenu({
+        id,
+        text: getTextRef.current(),
+        rect: { top: r.top, left: r.left, width: r.width, bottom: r.bottom },
+        cursor: null,
+        pointerId,
+      })
+    }
+  })
+
+  // The machine is created before the first paint (layout effect), so no user
+  // event can ever beat it. Its stable callbacks trampoline into the refs —
+  // which are only read at event time.
+  const [machine, setMachine] = useState<LongPressMachine | null>(null)
+  useLayoutEffect(() => {
+    const m = createLongPress(
+      { onOpen: pointerId => openRef.current(pointerId), onPressedChange: setPressed },
+      {
+        delayMs: LONG_PRESS_MS,
+        slopPx: MOVE_SLOP_PX,
+        scrollGraceMs: SCROLL_GRACE_MS,
+        vibrate: () => navigator.vibrate?.(10),
+      },
+    )
+    setMachine(m)
+    return () => m.destroy()
+    // A gesture still pending on unmount (row recycled) must not fire either:
+    // destroy() is the cleanup.
   }, [])
 
   const copy = useCallback(async () => {
-    const ok = await copyText(getText())
+    const ok = await copyText(getTextRef.current())
     showToast(ok ? t('chat.copied') : t('chat.copyFailed'))
-  }, [getText, t])
+  }, [t])
 
-  // While pressing, any scroll (the list, the page) cancels the gesture.
+  // While pressing, any scroll (the list, the page) cancels the hold — except
+  // the iOS momentum noise the machine's grace window absorbs.
   useEffect(() => {
-    if (!pressed) return
-    const cancel = () => clear()
-    window.addEventListener('scroll', cancel, { capture: true })
-    return () => window.removeEventListener('scroll', cancel, { capture: true })
-  }, [pressed, clear])
-
-  // A gesture still pending on unmount (row recycled mid-press) must not fire.
-  useEffect(() => clear, [clear])
-
-  const open = useCallback(
-    (rect: DOMRect, cursor: { x: number; y: number } | null) => {
-      if (!enabled) return
-      openMsgMenu({
-        id,
-        text: getText(),
-        rect: { top: rect.top, left: rect.left, width: rect.width, bottom: rect.bottom },
-        cursor,
-      })
-    },
-    [enabled, getText, id],
-  )
+    if (!pressed || !machine) return
+    const onScroll = () => machine.scroll()
+    window.addEventListener('scroll', onScroll, { capture: true })
+    return () => window.removeEventListener('scroll', onScroll, { capture: true })
+  }, [pressed, machine])
 
   const handlers: {
     onPointerDown: (e: ReactPointerEvent<HTMLDivElement>) => void
     onPointerMove: (e: ReactPointerEvent<HTMLDivElement>) => void
-    onPointerUp: (e: ReactPointerEvent<HTMLDivElement>) => void
+    onPointerUp: () => void
     onPointerCancel: () => void
     onContextMenu: (e: ReactMouseEvent<HTMLDivElement>) => void
   } = {
     onPointerDown(e) {
-      if (e.pointerType === 'mouse') {
-        touchRef.current = false
-        return
+      lastPointerTypeRef.current = e.pointerType
+      if (!machine) return
+      const armed = machine.down(e) === 'pressing'
+      if (armed) {
+        elRef.current = e.currentTarget
+        // Touch is implicitly captured already (spec §8.4); making it explicit
+        // also guarantees delivery on quirky engines when the menu portal
+        // appears over the finger.
+        try {
+          e.currentTarget.setPointerCapture(e.pointerId)
+        } catch {
+          // unsupported (tests/jsdom) — implicit capture still applies
+        }
       }
-      if (!e.isPrimary) {
-        // A second finger lands: the ongoing press is no longer a clean hold.
-        if (timerRef.current) clear()
-        return
-      }
-      if (!enabled) return
-      touchRef.current = true
-      startXRef.current = e.clientX
-      startYRef.current = e.clientY
-      firedRef.current = false
-      setPressed(true)
-      timerRef.current = setTimeout(() => {
-        firedRef.current = true
-        navigator.vibrate?.(10)
-      }, LONG_PRESS_MS)
     },
     onPointerMove(e) {
-      if (!timerRef.current && !pressed) return
-      const dx = e.clientX - startXRef.current
-      const dy = e.clientY - startYRef.current
-      if (Math.hypot(dx, dy) > MOVE_SLOP_PX) clear()
+      machine?.move(e)
     },
-    onPointerUp(e) {
-      const fire = firedRef.current
-      const rect = e.currentTarget.getBoundingClientRect()
-      clear()
-      if (fire) open(rect, null)
+    // The release neither opens nor closes the menu (see long-press.ts).
+    onPointerUp() {
+      machine?.up()
     },
     onPointerCancel() {
-      clear()
+      machine?.cancel()
     },
     onContextMenu(e) {
-      // Touch: suppress only the native long-press callout — our popup opens
-      // on release. Mouse: right-click opens the same popup at the cursor.
-      if (touchRef.current) {
-        e.preventDefault()
+      e.preventDefault()
+      if (contextMenuAction(lastPointerTypeRef.current ?? '') === 'suppress-native') {
+        // Touch/pen: the hold timer owns the menu; only kill the callout.
         return
       }
-      e.preventDefault()
-      open(e.currentTarget.getBoundingClientRect(), { x: e.clientX, y: e.clientY })
+      openMsgMenu({
+        id,
+        text: getTextRef.current(),
+        rect: (() => {
+          const r = e.currentTarget.getBoundingClientRect()
+          return { top: r.top, left: r.left, width: r.width, bottom: r.bottom }
+        })(),
+        cursor: { x: e.clientX, y: e.clientY },
+        pointerId: null,
+      })
     },
   }
 
-  // The bubble stays highlighted while its popup is the open one.
+  // The bubble stays highlighted while pressed and while its popup is the
+  // open one.
   return { handlers, pressed, selected: menu?.id === id, copy }
 }

@@ -641,11 +641,19 @@ button {
   box-shadow: 0 0 0 2px var(--accent);
 }
 
-/* Telegram-style copy popup — one instance, portaled to body by MessageList */
+/* Telegram-style copy popup — one instance, portaled to body by MessageList.
+   The backdrop node itself stays mounted for the app's lifetime: closed it is
+   inert (pointer-events: none), so it never eats a press and is never torn
+   down in the middle of a gesture (the iOS-safe pattern tweb uses). */
 .copy-menu-backdrop {
   position: fixed;
   inset: 0;
   z-index: 50; /* above the chat, below the toast (60) */
+  pointer-events: none;
+}
+
+.copy-menu-backdrop[data-open] {
+  pointer-events: auto;
 }
 
 .copy-menu {
