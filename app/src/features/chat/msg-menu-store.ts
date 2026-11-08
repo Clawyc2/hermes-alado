@@ -35,6 +35,15 @@ export type MsgMenu = {
 
 export const msgMenu = atom<MsgMenu | null>(null)
 
+/**
+ * Menus whose "Copy" already ran. Every open creates a FRESH menu object, so a
+ * new long-press on the same message is a new copy — but any SECOND invocation
+ * for the same open (iOS's deferred ghost click after the release, a
+ * double-delivered click on the item before React unmounts the portal, …) is
+ * a no-op. This is the one-toast guarantee, at the only place that writes.
+ */
+const copiedMenus = new WeakSet<MsgMenu>()
+
 export function openMsgMenu(menu: Omit<MsgMenu, 'openedAt'>): void {
   msgMenu.set({ ...menu, openedAt: performance.now() })
 }
@@ -46,9 +55,13 @@ export function closeMsgMenu(): void {
 /**
  * What the menu's "Copy" button does — the ONLY clipboard write in the
  * feature, and always from a real click (fresh user gesture, iOS-friendly).
+ * One-shot per menu instance: ghosts and duplicated clicks after the first
+ * copy are swallowed here, so one tap = one clipboard write = one toast.
  * Exported so the gesture tests drive the exact production path.
  */
 export async function copyFromMsgMenu(menu: NonNullable<MsgMenu>): Promise<void> {
+  if (copiedMenus.has(menu)) return // already copied this open — ghost/dup click
+  copiedMenus.add(menu)
   closeMsgMenu()
   const ok = await copyText(menu.text)
   showToast(ok ? t('chat.copied') : t('chat.copyFailed'))

@@ -8,6 +8,7 @@ import {
   isOpeningClick,
   msgMenu,
 } from './msg-menu-store'
+import { selectFromMsgMenu } from './msg-selection-store'
 import { Icon } from '../../ui/Icon'
 import { useT } from '../../i18n'
 
@@ -23,8 +24,8 @@ type Pos = { left: number; top: number; below: boolean; arrowX: number }
  * arrow) — and the menu opens while the finger is still down, so the backdrop
  * swallows that same pointer's release (pointerId) instead of treating it as
  * a tap-outside. Desktop right-click anchors it at the cursor. Tapping the
- * backdrop, scrolling or Esc closes it; tapping "Copy" is the only clipboard
- * write — a real click, so iOS is happy.
+ * backdrop, scrolling or Esc closes it. Items: "Copy message" (one clipboard
+ * write, one-shot per open) and "Select messages" (multi-selection mode).
  */
 export function CopyMenu() {
   const menu = useStore(msgMenu)
@@ -120,6 +121,19 @@ export function CopyMenu() {
         >
           <Icon name="copy" />
           <span>{t('chat.copyMessage')}</span>
+        </button>
+        <button
+          type="button"
+          className="copy-menu-item"
+          role="menuitem"
+          onClick={e => {
+            const ev = e as unknown as PointerEvent
+            if (isOpeningClick(menu, ev.pointerId, performance.now())) return
+            selectFromMsgMenu(menu)
+          }}
+        >
+          <Icon name="check" />
+          <span>{t('chat.selectMessages')}</span>
         </button>
         {!menu.cursor && (
           <span className="copy-menu-arrow" style={{ left: pos ? pos.arrowX : 0 }} aria-hidden="true" />

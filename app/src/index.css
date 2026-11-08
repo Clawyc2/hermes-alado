@@ -745,6 +745,113 @@ button {
   transform: rotate(45deg);
 }
 
+/* ── Multi-message selection (Telegram-style) ───────────────────────────────
+   While selecting: every row grows a check circle, checked bubbles get the
+   accent ring, non-selectable rows (streaming/empty) dim out, and a bottom
+   pill counts + copies. Taps toggle — the long-press menu is off in this mode. */
+.msg-check {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  align-self: center;
+  margin: 0 6px;
+  border: 1.5px solid var(--text-3);
+  border-radius: 50%;
+  color: var(--accent);
+  background: var(--surface-1);
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.msg-check.on {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #fff;
+}
+
+.msg-note .msg-check {
+  margin: 0;
+}
+
+.msg.selecting .msg-bubble,
+.msg-note.selecting {
+  cursor: pointer;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.msg.selecting.sel-selected .msg-bubble,
+.msg-note.selecting.sel-selected {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.msg.selecting.sel-off,
+.msg-note.selecting.sel-off {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.sel-bar {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--safe-bottom) + 14px);
+  transform: translateX(-50%);
+  z-index: 55; /* above the copy menu (50/51), below the toast (60) */
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 8px;
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  border-radius: 999px;
+  box-shadow: var(--shadow-md);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.sel-bar-cancel {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--text-2);
+}
+
+.sel-bar-count {
+  font-size: var(--text-sm);
+  color: var(--text-1);
+  white-space: nowrap;
+}
+
+.sel-bar-copy {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-family: inherit;
+  font-size: var(--text-sm);
+  white-space: nowrap;
+}
+
+.sel-bar-copy:disabled {
+  opacity: 0.5;
+}
+
+.sel-bar-copy:active {
+  filter: brightness(0.92);
+}
+
 /* Coarse pointers: long-press always copies the whole message (Telegram-style);
    manual text selection stays available on desktop */
 @media (pointer: coarse) {

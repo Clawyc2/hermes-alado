@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useStore } from '@nanostores/react'
 import { locale, useT } from '../../i18n'
 import { Avatar } from '../../ui/Avatar'
+import { Icon } from '../../ui/Icon'
 import { IconButton } from '../../ui/IconButton'
 import { useBotAppearance } from '../bots/appearance-store'
 import { Markdown } from './markdown'
@@ -9,6 +10,14 @@ import { activitySummary, groupToRows, type ActivityStep } from './activity'
 import { loadOlder, retryLast, type ChatItem } from './store'
 import { useLongPressCopy } from './useLongPressCopy'
 import { CopyMenu } from './CopyMenu'
+import { SelectionBar } from './SelectionBar'
+import {
+  bubblePressAction,
+  isSelectable,
+  itemText,
+  msgSelection,
+  toggleSelection,
+} from './msg-selection-store'
 
 export function MessageList({
   items,
@@ -109,6 +118,7 @@ export function MessageList({
         </div>
       )}
       <CopyMenu />
+      <SelectionBar items={items} />
     </div>
   )
 }
@@ -116,19 +126,14 @@ export function MessageList({
 function ItemRow({ g }: { g: ChatItem }) {
   const t = useT()
   // Long-press (mobile) / hover button (desktop) copies the RAW message text.
-  const rawText =
-    g.kind === 'user'
-      ? g.text
-      : g.kind === 'assistant'
-        ? g.text
-        : g.kind === 'agent'
-          ? g.body
-          : g.kind === 'delivery'
-            ? g.reply
-            : ''
-  const copyable =
-    rawText.trim() !== '' && !(g.kind === 'assistant' && (g.streaming || false))
-  const { handlers, pressed, selected, copy } = useLongPressCopy(g.id, () => rawText, copyable)
+  const rawText = itemText(g)
+  const copyable = isSelectable(g)
+  // Multi-selection mode: taps toggle bubbles, the long-press menu is off.
+  const sel = useStore(msgSelection)
+  const selecting = sel.active
+  const checked = sel.ids.has(g.id)
+  const press = bubblePressAction(selecting, copyable)
+  const { handlers, pressed, selected, copy } = useLongPressCopy(g.id, () => rawText, copyable && !selecting)
   const copyBtn = copyable && (g.kind === 'user' || g.kind === 'assistant') && (
     <IconButton
       icon="copy"
@@ -140,19 +145,47 @@ function ItemRow({ g }: { g: ChatItem }) {
   // pressed: finger down (gesture pending). selected: its popup is the open
   // one — the bubble stays lit until the menu closes.
   const armedCls = `${pressed || selected ? ' copy-armed' : ''}${selected ? ' copy-selected' : ''}`
+  // Selection-mode looks: check circle, accent ring when checked, dimmed when
+  // the row can't be selected (streaming / no text).
+  const selCls = selecting
+    ? ` selecting${checked ? ' sel-selected' : ''}${copyable ? '' : ' sel-off'}`
+    : ''
+  const rowCls = selCls
+  // While selecting, the row IS the checkbox; otherwise the long-press
+  // machine owns every gesture (bubblePressAction decides, purely).
+  const toggleProps =
+    press === 'toggle'
+      ? ({
+          role: 'checkbox',
+          'aria-checked': checked,
+          onClick: () => toggleSelection(g.id),
+        } as const)
+      : null
+  const lpProps = press === 'long-press' ? handlers : null
+  const checkSpan = selecting && (
+    <span className={`msg-check${checked ? ' on' : ''}`} aria-hidden="true">
+      {checked && <Icon name="check" size={14} />}
+    </span>
+  )
   switch (g.kind) {
     case 'user':
       return (
-        <div className="msg user">
+        <div className={`msg user${rowCls}`}>
+          {checkSpan}
           {copyBtn}
-          <div className={`msg-bubble${armedCls}`} {...handlers}>
+          <div
+            className={`msg-bubble${armedCls}`}
+            {...(toggleProps ?? {})}
+            {...(lpProps ?? {})}
+          >
             {g.text}
           </div>
         </div>
       )
     case 'agent':
       return (
-        <div className={`msg-note${armedCls}`} {...handlers}>
+        <div className={`msg-note${armedCls}${rowCls}`} {...(toggleProps ?? {})} {...(lpProps ?? {})}>
+          {checkSpan}
           <NoteAvatar name={g.sender} />
           <span>
             {t('chat.messageFrom', { sender: g.sender })}
@@ -167,7 +200,8 @@ function ItemRow({ g }: { g: ChatItem }) {
       )
     case 'delivery':
       return (
-        <div className={`msg-note${armedCls}`} {...handlers}>
+        <div className={`msg-note${armedCls}${rowCls}`} {...(toggleProps ?? {})} {...(lpProps ?? {})}>
+          {checkSpan}
           <NoteAvatar name={g.target} />
           <span>
             {t('chat.wroteTo', { target: g.target })}
@@ -183,8 +217,12 @@ function ItemRow({ g }: { g: ChatItem }) {
       )
     case 'assistant':
       return (
-        <div className="msg assistant">
-          <div className={`msg-bubble assistant${armedCls}`} {...handlers}>
+        <div className={`msg assistant${rowCls}`}>
+          <div
+            className={`msg-bubble assistant${armedCls}`}
+            {...(toggleProps ?? {})}
+            {...(lpProps ?? {})}
+          >
             {g.text.trim() ? (
               <Markdown text={g.text.trim()} />
             ) : g.streaming ? (
@@ -201,6 +239,7 @@ function ItemRow({ g }: { g: ChatItem }) {
               </div>
             )}
           </div>
+          {checkSpan}
           {copyBtn}
         </div>
       )

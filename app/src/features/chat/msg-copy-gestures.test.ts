@@ -7,6 +7,7 @@ import {
   isOpeningClick,
   msgMenu,
   openMsgMenu,
+  type MsgMenu,
 } from './msg-menu-store'
 import { t } from '../../i18n'
 import { toast } from '../../ui/toast-store'
@@ -74,6 +75,7 @@ function stubClipboard() {
 beforeEach(() => {
   vi.useFakeTimers()
   msgMenu.set(null)
+  toast.set(null)
 })
 
 afterEach(() => {
@@ -278,6 +280,75 @@ describe('(c) the Copy item — clipboard + toast', () => {
     // a later tap with another pointer: allowed
     expect(isOpeningClick(menu, 4, menu.openedAt + 301)).toBe(false)
     expect(isOpeningClick(menu, undefined, menu.openedAt + 10_000)).toBe(false)
+  })
+})
+
+describe('BUG A — one toast per copy (iOS ghost-click stream)', () => {
+  /** CopyMenu's production onClick for an item (mirrors the button handler). */
+  function itemClick(menu: NonNullable<MsgMenu>, pointerId: number | undefined, now: number, act: (m: NonNullable<MsgMenu>) => void) {
+    if (isOpeningClick(menu, pointerId, now)) return
+    act(menu)
+  }
+
+  it('the deferred ghost click + the real tap produced TWO writes/toasts (repro)', async () => {
+    const a = makeBubble('m1', 'texto para copiar')
+    hold(a) // menu opens mid-press (pointerId 1), finger still down
+    a.machine.up() // release after reading the menu…
+    const menu = msgMenu.get()!
+    const writeText = stubClipboard()
+    const toasts: string[] = []
+    const unsub = toast.subscribe(v => {
+      if (v) toasts.push(v.text)
+    })
+
+    // The full iOS stream on the Copy item: WebKit's deferred trailing click
+    // (no pointerId, long past the 300ms grace) then the user's real tap.
+    itemClick(menu, undefined, menu.openedAt + 600, copyFromMsgMenu) // ghost
+    itemClick(menu, 2, menu.openedAt + 900, copyFromMsgMenu) // real tap
+    await vi.runAllTimersAsync()
+
+    expect(writeText).toHaveBeenCalledTimes(1) // ← was 2 before the fix
+    expect(writeText).toHaveBeenCalledWith('texto para copiar')
+    expect(toasts.filter(x => x === t('chat.copied'))).toHaveLength(1)
+    expect(msgMenu.get()).toBeNull()
+    unsub()
+  })
+
+  it('a double-delivered click on the item is also one copy (same tap, two events)', async () => {
+    const a = makeBubble('m1', 'hola')
+    hold(a)
+    a.machine.up()
+    const menu = msgMenu.get()!
+    const writeText = stubClipboard()
+    const toasts: string[] = []
+    const unsub = toast.subscribe(v => {
+      if (v) toasts.push(v.text)
+    })
+    // Two clicks land back-to-back before React unmounts the portal.
+    itemClick(menu, 3, menu.openedAt + 700, copyFromMsgMenu)
+    itemClick(menu, 3, menu.openedAt + 710, copyFromMsgMenu)
+    await vi.runAllTimersAsync()
+    expect(writeText).toHaveBeenCalledTimes(1)
+    expect(toasts.filter(x => x === t('chat.copied'))).toHaveLength(1)
+    unsub()
+  })
+
+  it('copying the SAME message twice via two separate menus still works (new open, new copy)', async () => {
+    const a = makeBubble('m1', 'hola')
+    hold(a)
+    a.machine.up()
+    const first = msgMenu.get()!
+    const writeText = stubClipboard()
+    await copyFromMsgMenu(first)
+
+    hold(a) // long-press again → a fresh menu instance
+    a.machine.up()
+    const second = msgMenu.get()!
+    expect(second).not.toBe(first) // fresh open → fresh gesture
+    await copyFromMsgMenu(second)
+
+    expect(writeText).toHaveBeenCalledTimes(2) // two real user copies = two writes
+    expect(msgMenu.get()).toBeNull()
   })
 })
 
